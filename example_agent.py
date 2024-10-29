@@ -45,14 +45,10 @@ def agent_function(request_dict, _info):
 
     # map_lines = game_map.strip().split('\n')
     map_lines = [line.strip() for line in game_map.strip().split('\n')]
-    map_lines.reverse()
 
     # Log the fetched information for debugging
     print('Initial Equipment:', initial_equipment)
-    # print('Game Map:\n', game_map)\
-    print('Game Map:')
-    for line in map_lines:
-        print(line)
+    print('Game Map:\n', game_map)
     print('Max Time Allowed:', max_time)
     print('Current Cell:', current_cell)
 
