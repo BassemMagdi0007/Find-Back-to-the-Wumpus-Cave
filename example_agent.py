@@ -11,6 +11,7 @@
         This can complicate debugging.
         You can disable it by setting `parallel_runs=False` in the last line.
 """
+from collections import deque
 
 # Calculate movement cost based on cell type
 # Cell takes 1 hour (M,B,C) without climbing gear
@@ -18,13 +19,34 @@
 # Cell with rocks (R) takes 4 hours without climbing gear
 # with climbing gear it takes 2 hours
 
+"""Move the agent to a new position based on the action."""
+def move_agent(position, action):
+    if action == "GO north":
+        return (position[0] - 1, position[1])  # Move up
+    elif action == "GO south":
+        return (position[0] + 1, position[1])  # Move down
+    elif action == "GO east":
+        return (position[0], position[1] + 1)  # Move right
+    elif action == "GO west":
+        return (position[0], position[1] - 1)  # Move left
+    else:
+        return position  # No movement if action is unrecognized
+
+
 """Calculate the movement cost for a given cell type based on whether climbing gear is used."""
-def movement_cost(cell, climbing_gear=False):
-    if cell in ["M", "B", "C"]:
+def movement_cost(cell, climbing_gear=False, is_starting_cell=False):
+    # if is_starting_cell:
+    #     return 0.5  # Cost to move from the center of the starting cell
+
+    if cell in ["M", "B", "C"] and not is_starting_cell:
         return 1.2 if climbing_gear else 1.0
     elif cell == "R":
         return 2.0 if climbing_gear else 4.0
-    
+    else:
+        # Treat unknown cells as 'M' by default
+        return 1.2 if climbing_gear else 1.0
+
+
 """Find positions of a target character in the map."""   
 def find_positions(map_lines, target):
     positions = []
@@ -33,6 +55,35 @@ def find_positions(map_lines, target):
             if cell == target:
                 positions.append((row, col))
     return positions
+
+
+def bfs(start, game_map, climbing_gear):
+    directions = ["GO north", "GO south", "GO east", "GO west"]
+    
+    queue = deque([(start, [])])  # Queue of (current position, path taken)
+    visited = set()  # Track visited positions
+    visited.add(start)
+
+    while queue:
+        current_position, path = queue.popleft()
+        
+        # Check if we reached the cave entrance
+        if game_map[current_position[0]][current_position[1]] == 'W':
+            return path  # Return the path to the cave entrance
+
+        # Explore neighbors
+        for action in directions:
+            new_position = move_agent(current_position, action)
+            if (0 <= new_position[0] < len(game_map) and
+                0 <= new_position[1] < len(game_map[0]) and
+                new_position not in visited):
+                
+                cell = game_map[new_position[0]][new_position[1]]
+                if cell != 'X':  # Assuming 'X' is an obstacle
+                    visited.add(new_position)
+                    queue.append((new_position, path + [action]))
+
+    return None  # Return None if no path is found
 
 
 def agent_function(request_dict, _info):
@@ -60,23 +111,58 @@ def agent_function(request_dict, _info):
     print('Cave Entrances:', cave_entrances)
     print('Start Positions:', start_positions)
 
-    # Placeholder: Implement pathfinding here
-    actions = ["GO south", "GO east"]  # Replace with calculated actions
+    # Check if the agent has climbing gear
+    climbing_gear = 'climbing_gear' in initial_equipment
 
-    # Calculate estimated time based on movement costs and paths (using movement_cost)
-    expected_time = 0  # Placeholder, replace with actual path time calculation
+    all_actions = []  # To store actions from all start positions
+    total_time = 0  # Total time for all paths found
 
-    # Estimate success chance based on the starting positions
-    success_chance = 1.0 if start_positions else 0.0  # Simplified; adjust for probability
+        # Iterate through each start position to calculate time for the path to cave entrance
+    for start in start_positions:
+        # Perform BFS to find the path from start to cave entrance
+        path = bfs(start, map_lines, climbing_gear)
 
-    # return {
-    #     "actions": actions,
-    #     "success-chance": success_chance,
-    #     "expected-time": expected_time
-    # }
+        if path is not None:  # If a path is found
+            actions = path  # Actions taken to reach the cave entrance
+            total_time_for_path = 0.5  # Start with the initial move cost of 0.5 hours
+            
+            # Calculate total movement cost for the actions
+            current_position = start  # Start from the initial position
+            first_move = True  # Track the first move
+            
+            for action in actions:
+                # Move the agent to the new position
+                new_position = move_agent(current_position, action)
 
-    return {"actions": ["GO south", "GO east"], "success-chance": 0.5, "expected-time": 1.5}
-    # return action
+                # If it's not the first move, calculate movement cost based on cell type
+                if not first_move:
+                    cost = movement_cost(map_lines[new_position[0]][new_position[1]], climbing_gear)
+                    total_time_for_path += cost  # Add cost to total time
+                else:
+                    # First move is already accounted as 0.5, set first_move to False
+                    first_move = False
+
+                # Update current position
+                current_position = new_position  
+
+            # Append actions and their respective time to the all_actions list
+            all_actions.append(actions)
+            total_time += total_time_for_path  # Add path time to total time
+            
+            # Print the actions and the total time required
+            print(f"Actions for {start}: {actions}, Total Time: {total_time_for_path:.2f} hours")
+        else:
+            print(f"No path found from start position {start}.")
+
+    # Dummy values for success chance and expected time
+    success_chance = 0.8  # Dummy success chance
+    expected_time = total_time  # Use the total time calculated
+
+    return {
+        "actions": all_actions, 
+        "success-chance": success_chance, 
+        "expected-time": expected_time
+    }
 
 
 if __name__ == '__main__':
@@ -96,5 +182,5 @@ if __name__ == '__main__':
         agent_function,
         processes=1,        # higher values will call the agent function on multiple requests in parallel
         run_limit=1000,     # stop after 1000 runs (then the rating is "complete")
-        parallel_runs=False  # multiple requests are bundled in one server interaction (more efficient)
+        parallel_runs= False  # multiple requests are bundled in one server interaction (more efficient)
     )
