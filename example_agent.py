@@ -110,24 +110,68 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
     return total_time
 
 
-# Find the best plan from all start positions that meets time and destination criteria
+def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time):
+    """Calculate the success chance based on starting positions."""
+    success_count = 0
+    total_starts = len(start_positions)
+
+    for wumpus_pos in start_positions:
+        if simulate_path_success(wumpus_pos, path, map_lines, max_time):
+            success_count += 1
+
+    # Calculate success chance
+    if total_starts > 0:
+        return success_count / total_starts  # Fraction of successful starts
+    else:
+        return 0.0  # No starts to evaluate
+
+
+def simulate_path_success(start, path, map_lines, max_time):
+    """Simulate the movement along the path and check if it leads to a cave entrance."""
+    current_position = start
+    total_time = 0.0  # Initialize total time for the path
+
+    for action in path:
+        # Move the agent
+        new_position = move_agent(current_position, action)
+
+        # Check if the new position is within bounds before accessing map_lines
+        if not (0 <= new_position[0] < len(map_lines) and 0 <= new_position[1] < len(map_lines[0])):
+            return False  # Out of bounds, so return failure
+
+        # Calculate the movement cost for the new position
+        cell_type = map_lines[new_position[0]][new_position[1]]
+        perceived_type = perceived_cell_type(cell_type)
+        total_time += movement_cost(perceived_type, climbing_gear=True)  # Assuming climbing gear for simplicity
+
+        # Update the current position
+        current_position = new_position
+
+    # Check if the last position is the cave entrance and total time is within limits
+    last_cell_type = map_lines[current_position[0]][current_position[1]]
+    return last_cell_type == 'W' and total_time <= max_time  # Return True if successful
+
+
+
+# Find the best plan, prioritizing higher success chance and lower expected time
 def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time):
     best_plan = None
-    min_total_time = float('inf')
+    highest_success_chance = 0
+    best_time = float('inf')
 
-    # Iterate through each start position
     for start in start_positions:
         path = bfs(start, map_lines)
-
-        if path:  # If a path is found
+        if path:
             total_time_for_path = calculate_total_time(path, start, map_lines, climbing_gear)
+            if total_time_for_path <= max_time:
+                # Calculate success chance for this path from start positions
+                success_chance = calculate_success_chance_for_starts(start_positions, map_lines, path, max_time)
+                if success_chance > highest_success_chance or (success_chance == highest_success_chance and total_time_for_path < best_time):
+                    best_plan = path
+                    highest_success_chance = success_chance
+                    best_time = total_time_for_path
 
-            # Check if the path meets the criteria
-            if total_time_for_path <= max_time and total_time_for_path < min_total_time:
-                best_plan = path
-                min_total_time = total_time_for_path
-
-    return best_plan, min_total_time
+    return best_plan, best_time, highest_success_chance
 
 
 # Main agent function
@@ -161,17 +205,17 @@ def agent_function(request_dict, _info):
     climbing_gear = 'climbing_gear' in initial_equipment
 
     # Find the best plan within the allowed time
-    best_plan, min_total_time = find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time)
+    best_plan, min_total_time, success_chance = find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time)
 
-    
     # Log for debugging
     print("BEST PLAN: ", best_plan)
+    print("SUCCESS CHANCE: ", success_chance)
 
     # Return the best plan if found, otherwise return empty result
     if best_plan:
         return {
             "actions": best_plan,
-            "success-chance": 0.8,  # Placeholder success chance
+            "success-chance": success_chance,
             "expected-time": min_total_time
         }
     else:
