@@ -22,6 +22,7 @@
 
 
 from collections import deque
+import random
 
 # Move the agent to a new position based on the action
 def move_agent(position, action):
@@ -36,11 +37,22 @@ def move_agent(position, action):
     return position  # No movement if action is unrecognized
 
 
+# Helper function for the agent's perception based on conditional probability
+def perceived_cell_type(cell_type):
+    """Return the perceived cell type based on conditional probability."""
+    if cell_type == 'B':
+        return 'C' if random.random() < 0.2 else 'B'
+    elif cell_type == 'C':
+        return 'B' if random.random() < 0.2 else 'C'
+    return cell_type  # No misidentification for other cell types
+
+
 # Calculate movement cost for a given cell type based on whether climbing gear is used
 def movement_cost(cell, climbing_gear=False):
-    if cell in ["M", "B", "C"]:
+    perceived_type = perceived_cell_type(cell)
+    if perceived_type in ["M", "B", "C"]:
         return 1.2 if climbing_gear else 1.0
-    elif cell == "R":
+    elif perceived_type == "R":
         return 2.0 if climbing_gear else 4.0
     return 1.2 if climbing_gear else 1.0  # Default to ground cell
 
@@ -88,7 +100,8 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
         new_position = move_agent(current_position, action)
         if not first_move:
             cell = map_lines[new_position[0]][new_position[1]]
-            total_time += movement_cost(cell, climbing_gear)
+            perceived_type = perceived_cell_type(cell)
+            total_time += movement_cost(perceived_type, climbing_gear)
         else:
             first_move = False  # Skip additional cost for the first move
 
@@ -119,6 +132,8 @@ def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, ma
 
 # Main agent function
 def agent_function(request_dict, _info):
+    print("\n")
+    print("request_dict:", request_dict)
     # Fetch data from the request dictionary
     initial_equipment = request_dict.get('initial-equipment', [])
     game_map = request_dict.get('map', '')
@@ -129,7 +144,8 @@ def agent_function(request_dict, _info):
 
     # Log the fetched information for debugging
     print('Initial Equipment:', initial_equipment)
-    print('Game Map:\n', game_map)
+
+    print('_________Game Map:_________\n', game_map)
     print('Max Time Allowed:', max_time)
     print('Current Cell:', current_cell)
 
@@ -146,6 +162,7 @@ def agent_function(request_dict, _info):
 
     # Find the best plan within the allowed time
     best_plan, min_total_time = find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time)
+
     
     # Log for debugging
     print("BEST PLAN: ", best_plan)
