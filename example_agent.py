@@ -11,6 +11,16 @@
         This can complicate debugging.
         You can disable it by setting `parallel_runs=False` in the last line.
 """
+
+# TODO
+# 1) Calculate the movement cost dynamically inside the BFS instead of agent_function
+# 2) Instead of returning all the plans in all_actions. 
+# -> Check for each plan if it was successful in finding the cave entrance (Y: Check next condition, N: Drop it)
+# -> CHeck if the total time of that plan exceeded the max-time (Y: Drop it, N: Save it)
+# FIXME
+# How to calculate the success chance "the Wumpus is in a cell, for which the plan is successful and the plan succeeds for two of them" ?
+
+
 from collections import deque
 
 # Calculate movement cost based on cell type
@@ -34,11 +44,8 @@ def move_agent(position, action):
 
 
 """Calculate the movement cost for a given cell type based on whether climbing gear is used."""
-def movement_cost(cell, climbing_gear=False, is_starting_cell=False):
-    # if is_starting_cell:
-    #     return 0.5  # Cost to move from the center of the starting cell
-
-    if cell in ["M", "B", "C"] and not is_starting_cell:
+def movement_cost(cell, climbing_gear=False):
+    if cell in ["M", "B", "C"]:
         return 1.2 if climbing_gear else 1.0
     elif cell == "R":
         return 2.0 if climbing_gear else 4.0
@@ -57,28 +64,30 @@ def find_positions(map_lines, target):
     return positions
 
 
-def bfs(start, game_map, climbing_gear):
+def bfs(start, map_lines):
     directions = ["GO north", "GO south", "GO east", "GO west"]
     
-    queue = deque([(start, [])])  # Queue of (current position, path taken)
+    queue = deque([(start, [])])  # Initialization of the Queue (current position, path taken)
     visited = set()  # Track visited positions
     visited.add(start)
+    print("QUEUE: ", queue)
 
     while queue:
         current_position, path = queue.popleft()
         
         # Check if we reached the cave entrance
-        if game_map[current_position[0]][current_position[1]] == 'W':
+        if map_lines[current_position[0]][current_position[1]] == 'W':
             return path  # Return the path to the cave entrance
 
         # Explore neighbors
         for action in directions:
+            # Boundary and Visited Check
             new_position = move_agent(current_position, action)
-            if (0 <= new_position[0] < len(game_map) and
-                0 <= new_position[1] < len(game_map[0]) and
+            if (0 <= new_position[0] < len(map_lines) and
+                0 <= new_position[1] < len(map_lines[0]) and
                 new_position not in visited):
                 
-                cell = game_map[new_position[0]][new_position[1]]
+                cell = map_lines[new_position[0]][new_position[1]]
                 if cell != 'X':  # Assuming 'X' is an obstacle
                     visited.add(new_position)
                     queue.append((new_position, path + [action]))
@@ -98,14 +107,14 @@ def agent_function(request_dict, _info):
     map_lines = [line.strip() for line in game_map.strip().split('\n')]
 
     # Log the fetched information for debugging
-    print('Initial Equipment:', initial_equipment)
+    # print('Initial Equipment:', initial_equipment)
     print('Game Map:\n', game_map)
     print('Max Time Allowed:', max_time)
     print('Current Cell:', current_cell)
 
     # Find cave and starting position
     cave_entrances = find_positions(map_lines, 'W')
-    start_positions = find_positions(map_lines, current_cell)
+    start_positions = find_positions(map_lines, current_cell) #tuple
 
     # Log for debugging
     print('Cave Entrances:', cave_entrances)
@@ -114,55 +123,57 @@ def agent_function(request_dict, _info):
     # Check if the agent has climbing gear
     climbing_gear = 'climbing_gear' in initial_equipment
 
-    all_actions = []  # To store actions from all start positions
-    total_time = 0  # Total time for all paths found
+    # Variables to track the best plan
+    best_plan = None
+    min_total_time = float('inf')
 
-        # Iterate through each start position to calculate time for the path to cave entrance
+    # Iterate through each start position to calculate time for the path to cave entrance
     for start in start_positions:
         # Perform BFS to find the path from start to cave entrance
-        path = bfs(start, map_lines, climbing_gear)
+        path = bfs(start, map_lines)
 
         if path is not None:  # If a path is found
             actions = path  # Actions taken to reach the cave entrance
-            total_time_for_path = 0.5  # Start with the initial move cost of 0.5 hours
-            
-            # Calculate total movement cost for the actions
-            current_position = start  # Start from the initial position
-            first_move = True  # Track the first move
-            
-            for action in actions:
-                # Move the agent to the new position
-                new_position = move_agent(current_position, action)
+            total_time_for_path = 0.5  # Initial move cost of 0.5 hours
 
-                # If it's not the first move, calculate movement cost based on cell type
+            # Calculate total movement cost for the actions
+            current_position = start
+            first_move = True
+
+            for action in actions:
+                # Move to new position and calculate movement cost
+                new_position = move_agent(current_position, action)
                 if not first_move:
                     cost = movement_cost(map_lines[new_position[0]][new_position[1]], climbing_gear)
-                    total_time_for_path += cost  # Add cost to total time
+                    total_time_for_path += cost
                 else:
-                    # First move is already accounted as 0.5, set first_move to False
-                    first_move = False
+                    first_move = False  # Skip additional cost for the first move
+                current_position = new_position  # Update current position
 
-                # Update current position
-                current_position = new_position  
+            # Check if this path meets the requirements
+            if total_time_for_path <= max_time:
+                # Check if this plan has the least time so far
+                if total_time_for_path < min_total_time:
+                    best_plan = actions
+                    min_total_time = total_time_for_path
 
-            # Append actions and their respective time to the all_actions list
-            all_actions.append(actions)
-            total_time += total_time_for_path  # Add path time to total time
-            
-            # Print the actions and the total time required
-            print(f"Actions for {start}: {actions}, Total Time: {total_time_for_path:.2f} hours")
-        else:
-            print(f"No path found from start position {start}.")
-
-    # Dummy values for success chance and expected time
-    success_chance = 0.8  # Dummy success chance
-    expected_time = total_time  # Use the total time calculated
-
-    return {
-        "actions": all_actions, 
-        "success-chance": success_chance, 
-        "expected-time": expected_time
-    }
+    # Return the best plan found within the allowed time, if any
+    if best_plan:
+        print("BEST PLAN: ", best_plan)
+        success_chance = 0.8  # Placeholder success chance
+        return {
+            "actions": best_plan,
+            "success-chance": success_chance,
+            "expected-time": min_total_time
+        }
+    else:
+        # If no valid plan is found within max_time
+        return {
+            "actions": [],
+            "success-chance": 0.0,
+            "expected-time": 0.0
+        }
+     
 
 
 if __name__ == '__main__':
