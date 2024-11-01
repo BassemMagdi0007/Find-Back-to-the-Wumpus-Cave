@@ -151,13 +151,22 @@ def simulate_path_success(start, path, map_lines, max_time):
     last_cell_type = map_lines[current_position[0]][current_position[1]]
     return last_cell_type == 'W' and total_time <= max_time  # Return True if successful
 
-
+# Apply the 20% misidentification probability for the start cell type
+def apply_start_cell_misidentification(cell_type):
+    """Return the start cell type after applying a 20% misidentification chance."""
+    if cell_type == 'B' and random.random() < 0.2:
+        return 'C'  # 20% chance to misidentify 'B' as 'C'
+    elif cell_type == 'C' and random.random() < 0.2:
+        return 'B'  # 20% chance to misidentify 'C' as 'B'
+    return cell_type  # No misidentification
 
 # Find the best plan, prioritizing higher success chance and lower expected time
 def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time):
     best_plan = None
     highest_success_chance = 0
     best_time = float('inf')
+    total_time_for_successful_starts = 0.0
+    successful_start_count = 0
 
     for start in start_positions:
         path = bfs(start, map_lines)
@@ -166,12 +175,27 @@ def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, ma
             if total_time_for_path <= max_time:
                 # Calculate success chance for this path from start positions
                 success_chance = calculate_success_chance_for_starts(start_positions, map_lines, path, max_time)
+                
+                # Update expected time calculations only if this path is successful
+                for wumpus_pos in start_positions:
+                    # Check if this specific start position would lead to a successful path
+                    if simulate_path_success(wumpus_pos, path, map_lines, max_time):
+                        total_time_for_successful_starts += total_time_for_path
+                        successful_start_count += 1
+
+                # Choose the best plan based on success chance and time
                 if success_chance > highest_success_chance or (success_chance == highest_success_chance and total_time_for_path < best_time):
                     best_plan = path
                     highest_success_chance = success_chance
                     best_time = total_time_for_path
 
-    return best_plan, best_time, highest_success_chance
+    # Calculate the expected time for the successful starts only
+    if successful_start_count > 0:
+        expected_time = total_time_for_successful_starts / successful_start_count
+    else:
+        expected_time = 0.0
+
+    return best_plan, expected_time, highest_success_chance
 
 
 # Main agent function
@@ -186,9 +210,13 @@ def agent_function(request_dict, _info):
 
     map_lines = [line.strip() for line in game_map.strip().split('\n')]
 
+    # Apply misidentification chance to the start cell
+    start_cell = apply_start_cell_misidentification(current_cell)
+    print(f"Original Start Cell: {current_cell}, After Misidentification: {start_cell}")
+
+
     # Log the fetched information for debugging
     print('Initial Equipment:', initial_equipment)
-
     print('_________Game Map:_________\n', game_map)
     print('Max Time Allowed:', max_time)
     print('Current Cell:', current_cell)
@@ -197,26 +225,26 @@ def agent_function(request_dict, _info):
     cave_entrances = find_positions(map_lines, 'W')
     start_positions = find_positions(map_lines, current_cell)
 
-    # Log for debugging
-    print('Cave Entrances:', cave_entrances)
-    print('Start Positions:', start_positions)
-
     # Check if the agent has climbing gear
     climbing_gear = 'climbing_gear' in initial_equipment
 
     # Find the best plan within the allowed time
-    best_plan, min_total_time, success_chance = find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time)
+    best_plan, expected_time, success_chance = find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time)
 
+    # Calculate the rating
+    rating = success_chance * expected_time + (1 - success_chance) * max_time
     # Log for debugging
     print("BEST PLAN: ", best_plan)
     print("SUCCESS CHANCE: ", success_chance)
+    print("EXPECTED TIME: ", expected_time)
+    print("RATING: ", rating)
 
     # Return the best plan if found, otherwise return empty result
     if best_plan:
         return {
             "actions": best_plan,
             "success-chance": success_chance,
-            "expected-time": min_total_time
+            "expected-time": expected_time
         }
     else:
         return {
