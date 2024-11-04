@@ -18,13 +18,14 @@
 # -> Check for each plan if it was successful in finding the cave entrance (Y: Check next condition, N: Drop it)
 # -> CHeck if the total time of that plan exceeded the max-time (Y: Drop it, N: Save it)
 # FIXME
-# How to calculate the success chance "the Wumpus is in a cell, for which the plan is successful and the plan succeeds for two of them" ?
+# How to calculate the success chance "the agent is in a cell, for which the plan is successful and the plan succeeds for two of them" ?
 
 
 from collections import deque
 import random
 
-# Move the agent to a new position based on the action
+### GOT IT 
+"""Move the agent to a new position based on the action"""
 def move_agent(position, action):
     if action == "GO north":
         return (position[0] - 1, position[1])  # Move up
@@ -36,18 +37,17 @@ def move_agent(position, action):
         return (position[0], position[1] - 1)  # Move left
     return position  # No movement if action is unrecognized
 
-
-# Helper function for the agent's perception based on conditional probability
+### GOT IT
+"""Return the perceived cell type based on conditional probability."""
 def perceived_cell_type(cell_type):
-    """Return the perceived cell type based on conditional probability."""
     if cell_type == 'B':
         return 'C' if random.random() < 0.2 else 'B'
     elif cell_type == 'C':
         return 'B' if random.random() < 0.2 else 'C'
     return cell_type  # No misidentification for other cell types
 
-
-# Calculate movement cost for a given cell type based on whether climbing gear is used
+### GOT IT
+"""Calculate movement cost for a given cell type based on whether climbing gear is used"""
 def movement_cost(cell, climbing_gear=False):
     perceived_type = perceived_cell_type(cell)
     if perceived_type in ["M", "B", "C"]:
@@ -56,13 +56,13 @@ def movement_cost(cell, climbing_gear=False):
         return 2.0 if climbing_gear else 4.0
     return 1.2 if climbing_gear else 1.0  # Default to ground cell
 
-
-# Find positions of a target character in the map
+### GOT IT
+"""Find positions of a target character in the map"""
 def find_positions(map_lines, target):
     return [(row, col) for row, line in enumerate(map_lines) for col, cell in enumerate(line) if cell == target]
 
-
-# Perform BFS to find the path from start to cave entrance
+### GOT IT
+"""Perform BFS to find the path from start to cave entrance"""
 def bfs(start, map_lines):
     directions = ["GO north", "GO south", "GO east", "GO west"]
     queue = deque([(start, [])])  # Queue of (position, path taken)
@@ -82,15 +82,15 @@ def bfs(start, map_lines):
                 0 <= new_position[1] < len(map_lines[0]) and
                 new_position not in visited):
                 
-                cell = map_lines[new_position[0]][new_position[1]]
-                if cell != 'X':  # 'X' represents an obstacle
-                    visited.add(new_position)
-                    queue.append((new_position, path + [action]))
+                # cell = map_lines[new_position[0]][new_position[1]]
+                # if cell != 'X':  # 'X' represents an obstacle
+                visited.add(new_position)
+                queue.append((new_position, path + [action]))
 
     return None  # No path to cave entrance found
 
 
-# Calculate the total time required for a given path based on cell types
+"""Calculate the total time required for a given path based on cell types"""
 def calculate_total_time(path, start, map_lines, climbing_gear):
     total_time = 0.5  # Initial move cost
     current_position = start
@@ -110,24 +110,8 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
     return total_time
 
 
-def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time):
-    """Calculate the success chance based on starting positions."""
-    success_count = 0
-    total_starts = len(start_positions)
-
-    for wumpus_pos in start_positions:
-        if simulate_path_success(wumpus_pos, path, map_lines, max_time):
-            success_count += 1
-
-    # Calculate success chance
-    if total_starts > 0:
-        return success_count / total_starts  # Fraction of successful starts
-    else:
-        return 0.0  # No starts to evaluate
-
-
+"""Simulate the movement along the path and check if it leads to a cave entrance."""
 def simulate_path_success(start, path, map_lines, max_time):
-    """Simulate the movement along the path and check if it leads to a cave entrance."""
     current_position = start
     total_time = 0.0  # Initialize total time for the path
 
@@ -151,16 +135,33 @@ def simulate_path_success(start, path, map_lines, max_time):
     last_cell_type = map_lines[current_position[0]][current_position[1]]
     return last_cell_type == 'W' and total_time <= max_time  # Return True if successful
 
-# Apply the 20% misidentification probability for the start cell type
+
+"""Calculate the success chance based on starting positions."""
+def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time):
+    success_count = 0
+    total_starts = len(start_positions)
+
+    for agent in start_positions:
+        if simulate_path_success(agent, path, map_lines, max_time):
+            success_count += 1
+
+    # Calculate success chance
+    if total_starts > 0:
+        return success_count / total_starts  # Fraction of successful starts
+    else:
+        return 0.0  # No starts to evaluate
+    
+
+"""Return the start cell type after applying a 20% misidentification chance."""
 def apply_start_cell_misidentification(cell_type):
-    """Return the start cell type after applying a 20% misidentification chance."""
     if cell_type == 'B' and random.random() < 0.2:
         return 'C'  # 20% chance to misidentify 'B' as 'C'
     elif cell_type == 'C' and random.random() < 0.2:
         return 'B'  # 20% chance to misidentify 'C' as 'B'
     return cell_type  # No misidentification
 
-# Find the best plan, prioritizing higher success chance and lower expected time
+
+"""Find the best plan, prioritizing higher success chance and lower expected time"""
 def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, max_time):
     best_plan = None
     highest_success_chance = 0
@@ -177,9 +178,9 @@ def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, ma
                 success_chance = calculate_success_chance_for_starts(start_positions, map_lines, path, max_time)
                 
                 # Update expected time calculations only if this path is successful
-                for wumpus_pos in start_positions:
+                for agent in start_positions:
                     # Check if this specific start position would lead to a successful path
-                    if simulate_path_success(wumpus_pos, path, map_lines, max_time):
+                    if simulate_path_success(agent, path, map_lines, max_time):
                         total_time_for_successful_starts += total_time_for_path
                         successful_start_count += 1
 
@@ -198,7 +199,7 @@ def find_best_plan(start_positions, cave_entrances, map_lines, climbing_gear, ma
     return best_plan, expected_time, highest_success_chance
 
 
-# Main agent function
+"""Main agent function"""
 def agent_function(request_dict, _info):
     print("\n")
     print("request_dict:", request_dict)
@@ -212,18 +213,20 @@ def agent_function(request_dict, _info):
 
     # Apply misidentification chance to the start cell
     start_cell = apply_start_cell_misidentification(current_cell)
-    print(f"Original Start Cell: {current_cell}, After Misidentification: {start_cell}")
 
+    # Only print the message for cells 'B' and 'C'
+    if current_cell in ['B', 'C']:
+        print(f"Original Start Cell: {current_cell}, After Misidentification: {start_cell}")
 
     # Log the fetched information for debugging
     print('Initial Equipment:', initial_equipment)
     print('_________Game Map:_________\n', game_map)
     print('Max Time Allowed:', max_time)
-    print('Current Cell:', current_cell)
+    print('Current Cell:', start_cell)
 
-    # Find cave entrances and start positions
+    # Find cave entrances and start positions using the misidentified start_cell
     cave_entrances = find_positions(map_lines, 'W')
-    start_positions = find_positions(map_lines, current_cell)
+    start_positions = find_positions(map_lines, start_cell)  # Use start_cell instead of current_cell
 
     # Check if the agent has climbing gear
     climbing_gear = 'climbing_gear' in initial_equipment
@@ -242,7 +245,7 @@ def agent_function(request_dict, _info):
     # Return the best plan if found, otherwise return empty result
     if best_plan:
         return {
-            "actions": best_plan,
+            "actions": best_plan,  
             "success-chance": success_chance,
             "expected-time": expected_time
         }
