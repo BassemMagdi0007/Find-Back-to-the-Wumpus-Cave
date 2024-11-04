@@ -13,18 +13,11 @@
 """
 
 # TODO
-# 1) Calculate the movement cost dynamically inside the BFS instead of agent_function
-# 2) Instead of returning all the plans in all_actions. 
-# -> Check for each plan if it was successful in finding the cave entrance (Y: Check next condition, N: Drop it)
-# -> CHeck if the total time of that plan exceeded the max-time (Y: Drop it, N: Save it)
-# FIXME
-# How to calculate the success chance "the agent is in a cell, for which the plan is successful and the plan succeeds for two of them" ?
-
+#... 
 
 from collections import deque
 import random
 
-### GOT IT 
 """Move the agent to a new position based on the action"""
 def move_agent(position, action):
     if action == "GO north":
@@ -37,7 +30,7 @@ def move_agent(position, action):
         return (position[0], position[1] - 1)  # Move left
     return position  # No movement if action is unrecognized
 
-### GOT IT
+
 """Return the perceived cell type based on conditional probability."""
 def perceived_cell_type(cell_type):
     if cell_type == 'B':
@@ -46,7 +39,7 @@ def perceived_cell_type(cell_type):
         return 'B' if random.random() < 0.2 else 'C'
     return cell_type  # No misidentification for other cell types
 
-### GOT IT
+
 """Calculate movement cost for a given cell type based on whether climbing gear is used"""
 def movement_cost(cell, climbing_gear=False):
     perceived_type = perceived_cell_type(cell)
@@ -56,12 +49,12 @@ def movement_cost(cell, climbing_gear=False):
         return 2.0 if climbing_gear else 4.0
     return 1.2 if climbing_gear else 1.0  # Default to ground cell
 
-### GOT IT
+
 """Find positions of a target character in the map"""
 def find_positions(map_lines, target):
     return [(row, col) for row, line in enumerate(map_lines) for col, cell in enumerate(line) if cell == target]
 
-### GOT IT
+
 """Perform BFS to find the path from start to cave entrance"""
 def bfs(start, map_lines):
     directions = ["GO north", "GO south", "GO east", "GO west"]
@@ -81,9 +74,7 @@ def bfs(start, map_lines):
             if (0 <= new_position[0] < len(map_lines) and
                 0 <= new_position[1] < len(map_lines[0]) and
                 new_position not in visited):
-                
-                # cell = map_lines[new_position[0]][new_position[1]]
-                # if cell != 'X':  # 'X' represents an obstacle
+
                 visited.add(new_position)
                 queue.append((new_position, path + [action]))
 
@@ -119,6 +110,7 @@ def simulate_path_success(start, path, map_lines, max_time):
         # Move the agent
         new_position = move_agent(current_position, action)
 
+        # FIXME will tackle the code in the maps dealing with outside Meadows
         # Check if the new position is within bounds before accessing map_lines
         if not (0 <= new_position[0] < len(map_lines) and 0 <= new_position[1] < len(map_lines[0])):
             return False  # Out of bounds, so return failure
