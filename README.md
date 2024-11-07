@@ -52,6 +52,9 @@ Built-in library enables the generation of pseudo-random numbers and provides fu
 
 ## Code Structure
 
+## Output Format
+
+![Screenshot 2024-11-05 021618](https://github.com/user-attachments/assets/c87a469e-8126-4984-8621-f326a5f01972)
 
 
 
