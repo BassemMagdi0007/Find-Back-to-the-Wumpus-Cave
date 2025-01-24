@@ -31,50 +31,79 @@ def move_agent(position, action):
     return position  # No movement if action is unrecognized
 
 
-def compute_posterior(map_lines, observed_cell_type):
-    """Compute posterior probabilities for all cells given an observation."""
-    likelihood = {}
-    for row_idx, row in enumerate(map_lines):
-        for col_idx, cell_type in enumerate(row):
-            # Compute likelihood P(observation | actual cell type)
-            if observed_cell_type in ['B', 'C']:
-                if cell_type == observed_cell_type:
-                    lik = 0.8  # Correct identification
-                elif cell_type in ['B', 'C']:
-                    lik = 0.2  # Misidentification between B/C
-                else:
-                    lik = 0.0  # Other cell types cannot produce this observation
-            else:
-                # No misidentification for M, R, W
-                lik = 1.0 if cell_type == observed_cell_type else 0.0
-            likelihood[(row_idx, col_idx)] = lik
-
-    # Normalize to get posterior probabilities
-    total_lik = sum(likelihood.values())
-    if total_lik == 0:
-        # Edge case: Uniform distribution if observation is impossible
-        total_cells = len(map_lines) * len(map_lines[0])
-        return {cell: 1.0 / total_cells for cell in likelihood}
-    else:
-        return {cell: lik / total_lik for cell, lik in likelihood.items()}
+"""Return the perceived cell type based on conditional probability."""
+def perceived_cell_type(cell_type):
+    if cell_type == 'B':
+        return 'C' if random.random() < 0.2 else 'B'
+    elif cell_type == 'C':
+        return 'B' if random.random() < 0.2 else 'C'
+    return cell_type  # No misidentification for other cell types
 
 
-
-"""Calculate movement cost based on ACTUAL cell type (no misidentification)."""
-def movement_cost(cell_type, climbing_gear=False):
-    if cell_type == "M":
+"""Calculate movement cost for a given cell type based on whether climbing gear is used"""
+def movement_cost(cell, climbing_gear=False):
+    if cell in ["M", "B", "C"]:
         return 1.2 if climbing_gear else 1.0
-    elif cell_type in ["B", "C"]:  # Trees
-        return 1.2 if climbing_gear else 1.0
-    elif cell_type == "R":  # Rocks
+    elif cell == "R":
         return 2.0 if climbing_gear else 4.0
-    return 1.0  # Default (e.g., W or out-of-bounds M)
+    return 1.2 if climbing_gear else 1.0  # Default to ground cell
 
 
 """Find positions of a target character in the map"""
 def find_positions(map_lines, target):
     return [(row, col) for row, line in enumerate(map_lines) for col, cell in enumerate(line) if cell == target]
 
+def compute_posterior(map_lines, observations):
+    rows = len(map_lines)
+    cols = len(map_lines[0]) if rows else 0
+    total_cells = rows * cols
+    prior = 1.0 / total_cells  # Uniform prior
+
+    posterior = {}
+    for x in range(rows):
+        for y in range(cols):
+            cell_type = map_lines[x][y]
+            likelihood = 1.0
+
+            # Handle current-cell observation
+            if 'current-cell' in observations:
+                observed_type = observations['current-cell']
+                if cell_type in ['B', 'C']:
+                    if observed_type == cell_type:
+                        likelihood *= 0.8  # Correct identification
+                    elif (observed_type, cell_type) in [('B', 'C'), ('C', 'B')]:
+                        likelihood *= 0.2  # Misidentification
+                    else:
+                        likelihood *= 0.0  # Impossible observation
+                else:
+                    likelihood *= 1.0 if observed_type == cell_type else 0.0
+
+            # Handle cell-west observation (if present)
+            if 'cell-west' in observations:
+                west_x, west_y = x, y - 1
+                if 0 <= west_y < cols:
+                    west_type = map_lines[west_x][west_y]
+                    observed_west = observations['cell-west']
+                    if west_type in ['B', 'C']:
+                        if observed_west == west_type:
+                            likelihood *= 0.8
+                        elif (observed_west, west_type) in [('B', 'C'), ('C', 'B')]:
+                            likelihood *= 0.2
+                        else:
+                            likelihood *= 0.0
+                    else:
+                        likelihood *= 1.0 if observed_west == west_type else 0.0
+
+            posterior[(x, y)] = prior * likelihood
+
+    # Normalize posterior probabilities
+    total = sum(posterior.values())
+    if total > 0:
+        posterior = {k: v / total for k, v in posterior.items()}
+    else:
+        posterior = {k: 0.0 for k in posterior.keys()}  # No valid cells
+
+    return posterior
 
 """Perform BFS to find the path from start to cave entrance"""
 def bfs(start, map_lines):
@@ -111,8 +140,8 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
     for action in path:
         new_position = move_agent(current_position, action)
         if not first_move:
-            cell = map_lines[new_position[0]][new_position[1]]
-            total_time += movement_cost(cell, climbing_gear)  # Actual cell type
+            cell = map_lines[new_position[0]][new_position[1]]  # Use actual cell type
+            total_time += movement_cost(cell, climbing_gear)
         else:
             first_move = False  # Skip additional cost for the first move
 
@@ -122,31 +151,37 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
 
 
 """Simulate the movement along the path and check if it leads to a cave entrance."""
-def simulate_path_success(start, path, map_lines, max_time, climbing_gear):  # Add climbing_gear parameter
+def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
     current_position = start
-    total_time = 0.0
+    total_time = 0.0  # Initialize total time for the path
 
     for action in path:
+        # Move the agent
         new_position = move_agent(current_position, action)
-        # Handle out-of-bounds as 'M'
-        if not (0 <= new_position[0] < len(map_lines) and 0 <= new_position[1] < len(map_lines[0])):
-            cell_type = 'M'
-        else:
-            cell_type = map_lines[new_position[0]][new_position[1]]
-        total_time += movement_cost(cell_type, climbing_gear)  # Use gear status
 
+        # FIXME will tackle the code in the maps dealing with outside Meadows
+        # Check if the new position is within bounds before accessing map_lines
+        if not (0 <= new_position[0] < len(map_lines) and 0 <= new_position[1] < len(map_lines[0])):
+            return False  # Out of bounds, so return failure
+
+        # Calculate the movement cost for the new position
+        cell_type = map_lines[new_position[0]][new_position[1]]  # Use actual cell type
+        total_time += movement_cost(cell_type, climbing_gear)
+
+        # Update the current position
         current_position = new_position
 
-    last_cell = map_lines[current_position[0]][current_position[1]] if (0 <= current_position[0] < len(map_lines) and 0 <= current_position[1] < len(map_lines[0])) else 'M'
-    return last_cell == 'W' and total_time <= max_time
+    # Check if the last position is the cave entrance and total time is within limits
+    last_cell_type = map_lines[current_position[0]][current_position[1]]
+    return last_cell_type == 'W' and total_time <= max_time  # Return True if successful
 
 """Calculate the success chance based on starting positions."""
-def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time):
+def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time, climbing_gear):
     success_count = 0
     total_starts = len(start_positions)
 
     for agent in start_positions:
-        if simulate_path_success(agent, path, map_lines, max_time):
+        if simulate_path_success(agent, path, map_lines, max_time, climbing_gear):
             success_count += 1
 
     # Calculate success chance
@@ -154,85 +189,108 @@ def calculate_success_chance_for_starts(start_positions, map_lines, path, max_ti
         return success_count / total_starts  # Fraction of successful starts
     else:
         return 0.0  # No starts to evaluate
+    
 
-def evaluate_plan(plan, posterior, map_lines, max_time, climbing_gear):
-    success_chance = 0.0
-    total_time = 0.0
-    for cell, prob in posterior.items():
-        if simulate_path_success(cell, plan, map_lines, max_time, climbing_gear):  # Pass gear
-            time_taken = calculate_total_time(plan, cell, map_lines, climbing_gear)
-            success_chance += prob
-            total_time += prob * time_taken
-    expected_time = total_time / success_chance if success_chance > 0 else 0.0
-    return success_chance, expected_time
+"""Return the start cell type after applying a 20% misidentification chance."""
+def apply_start_cell_misidentification(cell_type):
+    if cell_type == 'B' and random.random() < 0.2:
+        return 'C'  # 20% chance to misidentify 'B' as 'C'
+    elif cell_type == 'C' and random.random() < 0.2:
+        return 'B'  # 20% chance to misidentify 'C' as 'B'
+    return cell_type  # No misidentification
+
 
 """Find the best plan, prioritizing higher success chance and lower expected time"""
-def find_best_plan(posterior, map_lines, climbing_gear, max_time):
-    best_rating = float('inf')
-    best_plan = []
-    best_success = 0.0
-    best_time = 0.0
+def find_best_plan(map_lines, posterior, climbing_gear, max_time):
+    best_plan = None
+    highest_success_chance = 0
+    best_time = float('inf')
+    total_time_for_successful_starts = 0.0
+    successful_start_count = 0
 
-    # Generate plans from the most probable cells
-    max_prob = max(posterior.values(), default=0)
-    candidate_cells = [cell for cell, prob in posterior.items() if prob == max_prob]
+    # Get all possible start positions (all cells with non-zero posterior probability)
+    start_positions = [pos for pos, prob in posterior.items() if prob > 0]
 
-    for cell in candidate_cells:
-        path = bfs(cell, map_lines)
+    for start in start_positions:
+        path = bfs(start, map_lines)
         if path:
-            # Evaluate this plan
-            success, exp_time = evaluate_plan(path, posterior, map_lines, max_time, climbing_gear)
-            rating = success * exp_time + (1 - success) * max_time
+            total_time_for_path = calculate_total_time(path, start, map_lines, climbing_gear)
+            if total_time_for_path <= max_time:
+                # Calculate success chance for this path using posterior probabilities
+                success_chance = 0.0
+                total_time_for_successful_starts = 0.0
+                successful_start_count = 0
 
-            if rating < best_rating:
-                best_plan = path
-                best_rating = rating
-                best_success = success
-                best_time = exp_time
+                for cell, prob in posterior.items():
+                    if simulate_path_success(cell, path, map_lines, max_time, climbing_gear):
+                        success_chance += prob
+                        total_time_for_successful_starts += prob * total_time_for_path
+                        successful_start_count += 1
 
-    return best_plan, best_time, best_success
+                # Update best plan if this one is better
+                if success_chance > highest_success_chance or (success_chance == highest_success_chance and total_time_for_path < best_time):
+                    best_plan = path
+                    highest_success_chance = success_chance
+                    best_time = total_time_for_path
+
+    # Calculate expected time for successful starts only
+    if successful_start_count > 0:
+        expected_time = total_time_for_successful_starts / success_chance
+    else:
+        expected_time = 0.0
+
+    return best_plan, expected_time, highest_success_chance
 
 
 """Main agent function"""
 def agent_function(request_dict, _info):
     print("\n")
     print('\t[Agent260]')
+    print("request_dict:", request_dict)
     # Fetch data from the request dictionary
     initial_equipment = request_dict.get('initial-equipment', [])
     game_map = request_dict.get('map', '')
     max_time = request_dict.get('max-time', 0.0)
-    current_cell = request_dict['observations'].get('current-cell', '')
+    observations = request_dict.get('observations', {})
 
-    map_lines = [line.strip() for line in game_map.strip().split('\n')]
-
-    # Log the fetched information for debugging
     print('Initial Equipment:', initial_equipment)
     print('_________Game Map:_________\n', game_map)
     print('Max Time Allowed:', max_time)
-    print('Current Cell:', current_cell)  # Directly print observed cell
+    print('Current Cell:', observations.get('current-cell', ''))
 
-    # Compute posterior probabilities
-    observed_cell_type = current_cell
-    posterior = compute_posterior(map_lines, observed_cell_type)
-    
-    # Check climbing gear
-    climbing_gear = 'climbing-gear' in initial_equipment  # Ensure hyphen matches JSON key
+    map_lines = [line.strip() for line in game_map.strip().split('\n')]
 
-    # Find best plan
-    best_plan, expected_time, success_chance = find_best_plan(posterior, map_lines, climbing_gear, max_time)
-    
-    # Calculate rating
+    # Compute posterior probabilities for all cells
+    posterior = compute_posterior(map_lines, observations)
+
+    # Check if the agent has climbing gear
+    climbing_gear = 'climbing_gear' in initial_equipment
+
+    # Find the best plan within the allowed time
+    best_plan, expected_time, success_chance = find_best_plan(map_lines, posterior, climbing_gear, max_time)
+
+    # Calculate the rating
     rating = success_chance * expected_time + (1 - success_chance) * max_time
+    # Log for debugging
     print("BEST PLAN: ", best_plan)
     print("SUCCESS CHANCE: ", success_chance)
     print("EXPECTED TIME: ", expected_time)
     print("RATING: ", rating)
+    print("_______________")
 
-    return {
-        "actions": best_plan if best_plan else [],
-        "success-chance": success_chance,
-        "expected-time": expected_time
-    }
+    # Return the best plan if found, otherwise return empty result
+    if best_plan:
+        return {
+            "actions": best_plan,
+            "success-chance": success_chance,
+            "expected-time": expected_time
+        }
+    else:
+        return {
+            "actions": [],
+            "success-chance": 0.0,
+            "expected-time": 0.0
+        }
     
 
 if __name__ == '__main__':
