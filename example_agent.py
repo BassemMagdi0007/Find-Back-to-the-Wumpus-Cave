@@ -53,6 +53,13 @@ def movement_cost(cell, climbing_gear=False):
 def find_positions(map_lines, target):
     return [(row, col) for row, line in enumerate(map_lines) for col, cell in enumerate(line) if cell == target]
 
+
+def get_cell_type(map_lines, x, y):
+    """Return cell type, treating out-of-bounds cells as meadows (M)"""
+    if 0 <= x < len(map_lines) and 0 <= y < len(map_lines[x]):
+        return map_lines[x][y]
+    return 'M'
+
 def compute_posterior(map_lines, observations):
     rows = len(map_lines)
     cols = len(map_lines[0]) if rows else 0
@@ -114,17 +121,16 @@ def bfs(start, map_lines):
     while queue:
         current_position, path = queue.popleft()
 
-        # Check if we reached the cave entrance
-        if map_lines[current_position[0]][current_position[1]] == 'W':
+        # Check if current cell is a cave entrance (W) on the original map
+        if (0 <= current_position[0] < len(map_lines) and
+            0 <= current_position[1] < len(map_lines[0]) and
+            map_lines[current_position[0]][current_position[1]] == 'W'):
             return path
 
-        # Explore neighbors
+        # Explore neighbors (including out-of-bounds)
         for action in directions:
             new_position = move_agent(current_position, action)
-            if (0 <= new_position[0] < len(map_lines) and
-                0 <= new_position[1] < len(map_lines[0]) and
-                new_position not in visited):
-
+            if new_position not in visited:
                 visited.add(new_position)
                 queue.append((new_position, path + [action]))
 
@@ -140,7 +146,8 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
     for action in path:
         new_position = move_agent(current_position, action)
         if not first_move:
-            cell = map_lines[new_position[0]][new_position[1]]  # Use actual cell type
+            # Use get_cell_type to handle out-of-bounds
+            cell = get_cell_type(map_lines, new_position[0], new_position[1])
             total_time += movement_cost(cell, climbing_gear)
         else:
             first_move = False  # Skip additional cost for the first move
@@ -159,21 +166,19 @@ def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
         # Move the agent
         new_position = move_agent(current_position, action)
 
-        # FIXME will tackle the code in the maps dealing with outside Meadows
-        # Check if the new position is within bounds before accessing map_lines
-        if not (0 <= new_position[0] < len(map_lines) and 0 <= new_position[1] < len(map_lines[0])):
-            return False  # Out of bounds, so return failure
-
-        # Calculate the movement cost for the new position
-        cell_type = map_lines[new_position[0]][new_position[1]]  # Use actual cell type
+        # Get cell type (handles out-of-bounds as 'M')
+        cell_type = get_cell_type(map_lines, new_position[0], new_position[1])
         total_time += movement_cost(cell_type, climbing_gear)
 
         # Update the current position
         current_position = new_position
 
-    # Check if the last position is the cave entrance and total time is within limits
-    last_cell_type = map_lines[current_position[0]][current_position[1]]
-    return last_cell_type == 'W' and total_time <= max_time  # Return True if successful
+    # Check if the last position is a cave entrance (W) on the original map
+    if (0 <= current_position[0] < len(map_lines) and
+        0 <= current_position[1] < len(map_lines[0]) and
+        map_lines[current_position[0]][current_position[1]] == 'W'):
+        return total_time <= max_time
+    return False  # Not a cave entrance or out-of-bounds
 
 """Calculate the success chance based on starting positions."""
 def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time, climbing_gear):
