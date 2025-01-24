@@ -113,13 +113,13 @@ def compute_posterior(map_lines, observations):
     return posterior
 
 """Perform BFS to find the path from start to cave entrance"""
-def bfs(start, map_lines):
+def bfs(start, map_lines, has_gear):
     directions = ["GO north", "GO south", "GO east", "GO west"]
-    queue = deque([(start, [])])  # Queue of (position, path taken)
-    visited = set([start])  # Track visited positions
+    queue = deque([(start, has_gear, [])])  # Queue of (position, has_gear, path)
+    visited = set([(start, has_gear)])  # Track visited (position, has_gear) states
 
     while queue:
-        current_position, path = queue.popleft()
+        current_position, current_gear, path = queue.popleft()
 
         # Check if current cell is a cave entrance (W) on the original map
         if (0 <= current_position[0] < len(map_lines) and
@@ -130,25 +130,39 @@ def bfs(start, map_lines):
         # Explore neighbors (including out-of-bounds)
         for action in directions:
             new_position = move_agent(current_position, action)
-            if new_position not in visited:
-                visited.add(new_position)
-                queue.append((new_position, path + [action]))
+            new_state = (new_position, current_gear)
+
+            if new_state not in visited:
+                visited.add(new_state)
+                queue.append((new_position, current_gear, path + [action]))
+
+        # Add DROP climbing-gear action if the agent has gear
+        if current_gear:
+            new_state = (current_position, False)  # Drop gear
+            if new_state not in visited:
+                visited.add(new_state)
+                queue.append((current_position, False, path + ["DROP climbing-gear"]))
 
     return None  # No path to cave entrance found
 
 
 """Calculate the total time required for a given path based on cell types"""
-def calculate_total_time(path, start, map_lines, climbing_gear):
+def calculate_total_time(path, start, map_lines, has_gear):
     total_time = 0.5  # Initial move cost
     current_position = start
+    current_gear = has_gear
     first_move = True
 
     for action in path:
+        if action == "DROP climbing-gear":
+            current_gear = False  # Drop gear
+            continue  # No movement cost for dropping gear
+
         new_position = move_agent(current_position, action)
         if not first_move:
             # Use get_cell_type to handle out-of-bounds
             cell = get_cell_type(map_lines, new_position[0], new_position[1])
-            total_time += movement_cost(cell, climbing_gear)
+            total_time += movement_cost(cell, current_gear)
         else:
             first_move = False  # Skip additional cost for the first move
 
@@ -158,17 +172,22 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
 
 
 """Simulate the movement along the path and check if it leads to a cave entrance."""
-def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
+def simulate_path_success(start, path, map_lines, max_time, has_gear):
     current_position = start
+    current_gear = has_gear
     total_time = 0.0  # Initialize total time for the path
 
     for action in path:
+        if action == "DROP climbing-gear":
+            current_gear = False  # Drop gear
+            continue  # No movement cost for dropping gear
+
         # Move the agent
         new_position = move_agent(current_position, action)
 
         # Get cell type (handles out-of-bounds as 'M')
         cell_type = get_cell_type(map_lines, new_position[0], new_position[1])
-        total_time += movement_cost(cell_type, climbing_gear)
+        total_time += movement_cost(cell_type, current_gear)
 
         # Update the current position
         current_position = new_position
@@ -206,7 +225,7 @@ def apply_start_cell_misidentification(cell_type):
 
 
 """Find the best plan, prioritizing higher success chance and lower expected time"""
-def find_best_plan(map_lines, posterior, climbing_gear, max_time):
+def find_best_plan(map_lines, posterior, has_gear, max_time):
     best_plan = None
     highest_success_chance = 0
     best_time = float('inf')
@@ -217,9 +236,9 @@ def find_best_plan(map_lines, posterior, climbing_gear, max_time):
     start_positions = [pos for pos, prob in posterior.items() if prob > 0]
 
     for start in start_positions:
-        path = bfs(start, map_lines)
+        path = bfs(start, map_lines, has_gear)
         if path:
-            total_time_for_path = calculate_total_time(path, start, map_lines, climbing_gear)
+            total_time_for_path = calculate_total_time(path, start, map_lines, has_gear)
             if total_time_for_path <= max_time:
                 # Calculate success chance for this path using posterior probabilities
                 success_chance = 0.0
@@ -227,7 +246,7 @@ def find_best_plan(map_lines, posterior, climbing_gear, max_time):
                 successful_start_count = 0
 
                 for cell, prob in posterior.items():
-                    if simulate_path_success(cell, path, map_lines, max_time, climbing_gear):
+                    if simulate_path_success(cell, path, map_lines, max_time, has_gear):
                         success_chance += prob
                         total_time_for_successful_starts += prob * total_time_for_path
                         successful_start_count += 1
