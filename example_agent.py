@@ -112,14 +112,25 @@ def compute_posterior(map_lines, observations):
 
     return posterior
 
-"""Perform BFS to find the path from start to cave entrance"""
-def bfs(start, map_lines, has_gear):
+def heuristic(position, goal):
+    """Estimate remaining time to reach the goal (Manhattan distance * min movement cost)."""
+    return abs(position[0] - goal[0]) + abs(position[1] - goal[1]) * 1.0
+
+import heapq
+
+def astar(start, map_lines, has_gear, max_time):
     directions = ["GO north", "GO south", "GO east", "GO west"]
-    queue = deque([(start, has_gear, [])])  # Queue of (position, has_gear, path)
+    goals = find_positions(map_lines, 'W')  # Find all W cells
+
+    if not goals:
+        return None  # No cave entrance on the map
+
+    # Priority queue: (f_score, cumulative_time, position, has_gear, path)
+    queue = [(0, 0.5, start, has_gear, [])]
     visited = set([(start, has_gear)])  # Track visited (position, has_gear) states
 
     while queue:
-        current_position, current_gear, path = queue.popleft()
+        f_score, total_time, current_position, current_gear, path = heapq.heappop(queue)
 
         # Check if current cell is a cave entrance (W) on the original map
         if (0 <= current_position[0] < len(map_lines) and
@@ -133,15 +144,29 @@ def bfs(start, map_lines, has_gear):
             new_state = (new_position, current_gear)
 
             if new_state not in visited:
-                visited.add(new_state)
-                queue.append((new_position, current_gear, path + [action]))
+                # Calculate movement cost for the new cell
+                cell_type = get_cell_type(map_lines, new_position[0], new_position[1])
+                move_cost = movement_cost(cell_type, current_gear)
+                new_total_time = total_time + move_cost
+
+                if new_total_time <= max_time:
+                    # Calculate f_score = g_score (cumulative_time) + h_score (heuristic)
+                    h_score = min(heuristic(new_position, goal) for goal in goals)
+                    f_score = new_total_time + h_score
+
+                    heapq.heappush(queue, (f_score, new_total_time, new_position, current_gear, path + [action]))
+                    visited.add(new_state)
 
         # Add DROP climbing-gear action if the agent has gear
         if current_gear:
             new_state = (current_position, False)  # Drop gear
             if new_state not in visited:
+                # No movement cost for dropping gear
+                h_score = min(heuristic(current_position, goal) for goal in goals)
+                f_score = total_time + h_score
+
+                heapq.heappush(queue, (f_score, total_time, current_position, False, path + ["DROP climbing-gear"]))
                 visited.add(new_state)
-                queue.append((current_position, False, path + ["DROP climbing-gear"]))
 
     return None  # No path to cave entrance found
 
@@ -236,7 +261,7 @@ def find_best_plan(map_lines, posterior, has_gear, max_time):
     start_positions = [pos for pos, prob in posterior.items() if prob > 0]
 
     for start in start_positions:
-        path = bfs(start, map_lines, has_gear)
+        path = astar(start, map_lines, has_gear, max_time)
         if path:
             total_time_for_path = calculate_total_time(path, start, map_lines, has_gear)
             if total_time_for_path <= max_time:
@@ -315,7 +340,7 @@ def agent_function(request_dict, _info):
             "success-chance": 0.0,
             "expected-time": 0.0
         }
-    
+
 
 if __name__ == '__main__':
     try:
@@ -333,6 +358,6 @@ if __name__ == '__main__':
         config_file,        # path to config file for the environment (in your personal repository)
         agent_function,
         processes=1,        # higher values will call the agent function on multiple requests in parallel
-        run_limit=1000,     # stop after 1000 runs (then the rating is "complete")
+        run_limit=100000,     # stop after 1000 runs (then the rating is "complete")
         parallel_runs= False  # multiple requests are bundled in one server interaction (more efficient)
     )
