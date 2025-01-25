@@ -14,8 +14,6 @@ This project implements an AI agent that navigates a grid-based environment to l
 - [Code Structure](#code-structure)
 - [Self Evaluation and Design Decisions](#design-decision)
 - [Output Format](#output-format)
-- [Use Cases](#use-cases)
-- [License](#license)
 
 ## Introduction
 This Python agent navigates uncertain terrain to locate cave entrances ('W') using probabilistic reasoning and adaptive pathfinding. <br>
@@ -189,7 +187,20 @@ def agent_function(request_dict, _info):
           "success-chance": success_chance,
           "expected-time": expected_time
       }
-    ```    
+    ```
+
+10) **Execution Flow:**
+```python
+if __name__ == '__main__':
+    # ...
+```
+- **Runtime Configuration:**
+    - Loads environment config from command line
+    - Sets up logging system
+- **Agent Interface:**
+    - Integrates with provided `client.py`
+    - Runs 100,000 simulations for performance evaluation
+
 ## Self Evaluation and Design Decisions
 
 ## Output Format
