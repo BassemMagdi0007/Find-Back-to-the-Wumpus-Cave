@@ -201,11 +201,80 @@ if __name__ == '__main__':
     - Integrates with provided `client.py`
     - Runs 100,000 simulations for performance evaluation
 
+
 ## Self Evaluation and Design Decisions
 
-## Output Format
+### Pathfinding Algorithm Evolution
 
-![Screenshot 2024-11-05 021618](https://github.com/user-attachments/assets/c87a469e-8126-4984-8621-f326a5f01972)
+#### **[BFS Approach]:**
+**Initial implementation used breadth-first search:**
+```python
+def bfs(start, map_lines):
+    queue = deque([(start, [])])
+    visited = set([start])
+    
+    while queue:
+        current_position, path = queue.popleft()
+        if is_cave_entrance(current_position):
+            return path
+        # Expand neighbors
+```
+**Poor Server Ratings Due To:**
+- Time-Ignorant Paths:
+    - Selected shortest-step paths regardless of time cost (e.g., 5 rocky cells = 20h vs 7 meadows = 7h)
+
+#### **[Dijkstra Approach]:**
+Second iteration introduced cost-aware search:
+```python
+def dijkstra(start, map_lines, has_gear, max_time):
+    queue = [(0.5, start, has_gear, [])]
+    while queue:
+        total_time, pos, gear, path = heapq.heappop(queue)
+        # Cost-aware expansion
+```
+
+#### **[A* Approach-Final Implementation]:**
+```python
+def astar(start, map_lines, max_time, gear, posterior):
+    heap = [(0.5 + heuristic(start), 0.5, start, [])]
+    while heap:
+        priority, time, pos, path = heappop(heap)
+        # Guided search
+```
+**Key Innovations:**
+- **Manhattan Distance Heuristic:**
+  ```python
+    def heuristic(position):
+        return min(abs(x - wx) + abs(y - wy) for all W cells)
+  ```
+- **Time-Aware Priority:**
+  ```python
+    priority = current_time + heuristic(new_position)
+  ```
+- **Path Memory Optimization:**
+  ```python
+    visited = set([(position, tuple(path))])  # Prevent cyclic paths
+  ```
+
+
+## Output Format
+The code currently works for env-1, env-2 and env-3
+### env-2
+<img width="853" alt="image" src="https://github.com/user-attachments/assets/01d3dc9b-d17f-4e4c-9e73-809d4c7911f1" />
+
+with rating 
+
+<img width="639" alt="image" src="https://github.com/user-attachments/assets/e9cb188c-1d60-4774-8567-1684e43fb200" />
+
+
+### env-3
+<img width="860" alt="image" src="https://github.com/user-attachments/assets/1c8fd057-5855-4859-a1f9-f1541756d7d9" />
+
+with rating 
+
+<img width="638" alt="image" src="https://github.com/user-attachments/assets/21b4a220-45b7-4aaa-9c9f-3c90bee15378" />
+
+
 
 
 
