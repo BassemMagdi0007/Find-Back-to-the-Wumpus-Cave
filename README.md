@@ -116,11 +116,10 @@ def compute_posterior(map_lines, observations):
 - Handles two observation types: current-cell and cell-west
 - Incorporates 20% sensor error rate for 'B'/'C' cells
 - Uses uniform prior distribution across all cells
-
-**Workflow:**
-1) Initialize uniform prior (1/total_cells)
-2) Update likelihoods based on observations:
-3) Normalize probabilities to sum to 1
+- **Workflow:**
+   - Initialize uniform prior (1/total_cells)
+   - Update likelihoods based on observations:
+   - Normalize probabilities to sum to 1
 
 6) **Pathfinding System:**
 ```python
@@ -137,32 +136,61 @@ def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5):
 - A* search implementation with time/action constraints
   
 **Key Features:**
-- Priority queue using (time + heuristic) for ordering
-- Tracks visited (position, path) pairs to prevent loops
+   - Priority queue using (time + heuristic) for ordering
+   - Tracks visited (position, path) pairs to prevent loops
 - **Enforces:**
    - Maximum 5 actions per path
    - Total time ≤ max_time
+- **Cost Calculation:**
+   - First move: 0.5h fixed cost
+   - Subsequent moves: Terrain-dependent costs
 
-**Cost Calculation:**
-- First move: 0.5h fixed cost
-- Subsequent moves: Terrain-dependent costs
+7) **Plan Validation System:**
+```python
+def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
+    # ...
+```
+-  Validates if a path reaches 'W' within time limit
+- **Time Accounting:**
+   - Initial cell exit: 0.5h fixed cost
+   - Movement costs applied after first action
 
+8) **Optimization Engine:**
+```python
+def find_best_plan(map_lines, posterior, climbing_gear, max_time):
+    # ...
+```
+- Evaluates all possible paths to find optimal solution
+- **Evaluation Criteria:**
+    - **Success Chance:** Σ(prob × path_success)
+    - **Expected Time:** (Σ prob×time) / success_chance
+    - **Rating:** success_chance×expected_time + (1-success_chance)×max_time
+- **Workflow:**
+    - Generate paths from all probable starting positions
+    - Simulate each path's success probability
+    - Select plan with minimal rating score
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+9) **Main Agent Function:**
+```python
+def agent_function(request_dict, _info):
+    # ...
+```    
+- **Input Processing:**
+   - Extracts map, equipment, time limit, and observations
+   - Converts map string to 2D array
+- **Core Logic:**
+   - Compute posterior position probabilities
+   - Check climbing gear availability
+   - Find optimal plan using A* and probabilistic evaluation
+- **Output:**
+    ```python
+      return {
+          "actions": best_plan,
+          "success-chance": success_chance,
+          "expected-time": expected_time
+      }
+    ```    
+## Self Evaluation and Design Decisions
 
 ## Output Format
 
