@@ -98,29 +98,64 @@ def compute_posterior(map_lines, observations):
 
     return posterior
 
-"""Perform BFS to find the path from start to cave entrance"""
-def bfs(start, map_lines):
+def heuristic(position, map_lines):
+    """Estimate the cost to reach the nearest W cell using Manhattan distance."""
+    min_distance = float('inf')
+    for x in range(len(map_lines)):
+        for y in range(len(map_lines[0])):
+            if map_lines[x][y] == 'W':
+                distance = abs(position[0] - x) + abs(position[1] - y)
+                if distance < min_distance:
+                    min_distance = distance
+    return min_distance
+
+from heapq import heappush, heappop
+
+def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5):
     directions = ["GO north", "GO south", "GO east", "GO west"]
-    queue = deque([(start, [])])  # Queue of (position, path taken)
-    visited = set([start])  # Track visited positions
+    heap = [(0.5 + heuristic(start, map_lines), 0.5, start, [])]  # (priority, time, position, path)
+    visited = set([(start, tuple())])  # Track position and path to avoid loops
 
-    while queue:
-        current_position, path = queue.popleft()
+    while heap:
+        priority, current_time, current_position, path = heappop(heap)
 
-        # Check if current cell is a cave entrance (W) on the original map
+        # Skip paths exceeding action limit
+        if len(path) >= max_actions:
+            continue
+
+        # Check if current cell is W and time is within limit
         if (0 <= current_position[0] < len(map_lines) and
             0 <= current_position[1] < len(map_lines[0]) and
             map_lines[current_position[0]][current_position[1]] == 'W'):
-            return path
+            if current_time <= max_time:
+                return path  # Return the path if valid
 
-        # Explore neighbors (including out-of-bounds)
+        # Prune paths exceeding max_time
+        if current_time > max_time:
+            continue
+
+        # Explore neighbors
         for action in directions:
             new_position = move_agent(current_position, action)
-            if new_position not in visited:
-                visited.add(new_position)
-                queue.append((new_position, path + [action]))
+            new_path = path + [action]
 
-    return None  # No path to cave entrance found
+            # Calculate time for this action
+            if len(new_path) == 1:
+                new_time = current_time  # First action cost already included
+            else:
+                cell = get_cell_type(map_lines, new_position[0], new_position[1])
+                cost = movement_cost(cell, climbing_gear)
+                new_time = current_time + cost
+
+            # Calculate priority (f = g + h)
+            priority = new_time + heuristic(new_position, map_lines)
+
+            # Add to heap if not visited
+            if (new_position, tuple(new_path)) not in visited:
+                visited.add((new_position, tuple(new_path)))
+                heappush(heap, (priority, new_time, new_position, new_path))
+
+    return None
 
 
 """Calculate the total time required for a given path based on cell types"""
@@ -197,16 +232,14 @@ def apply_start_cell_misidentification(cell_type):
     return cell_type  # No misidentification
 
 
-"""Find the best plan, prioritizing higher success chance and lower expected time"""
 def find_best_plan(map_lines, posterior, climbing_gear, max_time):
     best_plan = None
-    best_rating = float('inf')  # Lower rating is better
+    best_rating = float('inf')
     best_success_chance = 0
     best_expected_time = 0
 
-    # Iterate over all possible start positions to find paths
     for start in [pos for pos, prob in posterior.items() if prob > 0]:
-        path = bfs(start, map_lines)
+        path = astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5)  # Use A* search
         if not path:
             continue
 
