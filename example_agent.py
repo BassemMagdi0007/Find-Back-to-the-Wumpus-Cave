@@ -146,25 +146,31 @@ def calculate_total_time(path, start, map_lines, climbing_gear):
 """Simulate the movement along the path and check if it leads to a cave entrance."""
 def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
     current_position = start
-    total_time = 0.0  # Initialize total time for the path
+    total_time = 0.5  # Initial 0.5-hour cost to exit the starting cell
+    first_move = True
 
-    for action in path:
-        # Move the agent
-        new_position = move_agent(current_position, action)
-
-        # Get cell type (handles out-of-bounds as 'M')
-        cell_type = get_cell_type(map_lines, new_position[0], new_position[1])
-        total_time += movement_cost(cell_type, climbing_gear)
-
-        # Update the current position
-        current_position = new_position
-
-    # Check if the last position is a cave entrance (W) on the original map
+    # Check if starting cell is W (rare, but possible if misidentified)
     if (0 <= current_position[0] < len(map_lines) and
         0 <= current_position[1] < len(map_lines[0]) and
         map_lines[current_position[0]][current_position[1]] == 'W'):
-        return total_time <= max_time
-    return False  # Not a cave entrance or out-of-bounds
+        return (total_time <= max_time), total_time
+
+    for action in path:
+        new_position = move_agent(current_position, action)
+        if not first_move:
+            cell_type = get_cell_type(map_lines, new_position[0], new_position[1])
+            total_time += movement_cost(cell_type, climbing_gear)
+        else:
+            first_move = False  # Skip adding cost for the first move
+        current_position = new_position
+
+        # Check after each move if current cell is W and time is within limit
+        if (0 <= current_position[0] < len(map_lines) and
+            0 <= current_position[1] < len(map_lines[0]) and
+            map_lines[current_position[0]][current_position[1]] == 'W'):
+            return (total_time <= max_time), total_time
+
+    return False, 0.0  # Return failure if no W found
 
 """Calculate the success chance based on starting positions."""
 def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time, climbing_gear):
@@ -194,42 +200,40 @@ def apply_start_cell_misidentification(cell_type):
 """Find the best plan, prioritizing higher success chance and lower expected time"""
 def find_best_plan(map_lines, posterior, climbing_gear, max_time):
     best_plan = None
-    highest_success_chance = 0
-    best_time = float('inf')
-    total_time_for_successful_starts = 0.0
-    successful_start_count = 0
+    best_rating = float('inf')  # Lower rating is better
+    best_success_chance = 0
+    best_expected_time = 0
 
-    # Get all possible start positions (all cells with non-zero posterior probability)
-    start_positions = [pos for pos, prob in posterior.items() if prob > 0]
-
-    for start in start_positions:
+    # Iterate over all possible start positions to find paths
+    for start in [pos for pos, prob in posterior.items() if prob > 0]:
         path = bfs(start, map_lines)
-        if path:
-            total_time_for_path = calculate_total_time(path, start, map_lines, climbing_gear)
-            if total_time_for_path <= max_time:
-                # Calculate success chance and expected time for this path
-                success_chance = 0.0
-                expected_time = 0.0
+        if not path:
+            continue
 
-                for cell, prob in posterior.items():
-                    if simulate_path_success(cell, path, map_lines, max_time, climbing_gear):
-                        success_chance += prob
-                        expected_time += prob * total_time_for_path
+        # Calculate success chance and expected time for this path
+        success_chance = 0.0
+        total_weighted_time = 0.0
 
-                # Update best plan if this one is better
-                if success_chance > highest_success_chance or (success_chance == highest_success_chance and total_time_for_path < best_time):
-                    best_plan = path
-                    highest_success_chance = success_chance
-                    best_time = total_time_for_path
-                    total_time_for_successful_starts = expected_time
+        for cell, prob in posterior.items():
+            succeeds, time = simulate_path_success(cell, path, map_lines, max_time, climbing_gear)
+            if succeeds:
+                success_chance += prob
+                total_weighted_time += prob * time
 
-    # Calculate expected time for successful starts only
-    if highest_success_chance > 0:
-        expected_time = total_time_for_successful_starts / highest_success_chance
-    else:
-        expected_time = 0.0
+        # Calculate expected time (only if success_chance > 0)
+        expected_time = total_weighted_time / success_chance if success_chance > 0 else 0.0
 
-    return best_plan, expected_time, highest_success_chance
+        # Calculate rating
+        rating = success_chance * expected_time + (1 - success_chance) * max_time
+
+        # Update best plan if this one has a lower rating
+        if rating < best_rating:
+            best_plan = path
+            best_rating = rating
+            best_success_chance = success_chance
+            best_expected_time = expected_time
+
+    return best_plan, best_expected_time, best_success_chance
 
 
 """Main agent function"""
