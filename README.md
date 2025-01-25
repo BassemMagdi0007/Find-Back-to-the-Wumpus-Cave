@@ -1,6 +1,6 @@
 # Assignment 2.0 (Warm-Up, Variant A): Find Back to the Wumpus Cave
 
-This repository contains a Python implementation designed to be used as an agent to navigate a virtual grid-based environment. where an agent (The Wumpus) task is to traverse the shortest path back to the cave entrance ('W' cell), and operating within a limited time budget. The agent performs its actions in real-time by reading and processing instructions from a JSON configuration file. The code utilizes breadth-first search (BFS) for pathfinding and probabilistic modeling to simulate real-world uncertainty in map perception.
+This project implements an AI agent that navigates a grid-based environment to locate cave entrances ('W') under uncertain observations. The agent employs probabilistic reasoning to account for sensor inaccuracies and optimizes path planning to maximize success chances and minimize expected time using the A* algorithm with time constraints. It balances exploration efficiency with success probability while considering terrain-dependent movement costs.
 
 
 ## Table of Contents
@@ -18,39 +18,151 @@ This repository contains a Python implementation designed to be used as an agent
 - [License](#license)
 
 ## Introduction
-This Python script navigates a Wumpus World grid, guiding an agent toward cave entrances with dynamic path planning and probabilistic cell interpretation. Key functions include `bfs` for breadth-first pathfinding, `move_agent` to simulate movement based on directional actions, and `calculate_total_time` to compute cumulative travel time by adjusting costs for cell types and equipment like climbing gear. The agent utilizes `find_best_plan` to evaluate possible paths, balancing success probability and efficiency, while `calculate_success_chance_for_starts` assesses route viability across multiple starting positions. The main `agent_function` integrates these components to process map data dynamically Through these functions, the agent returns an action plan with expected time and success chance, optimizing each run based on changing grid configurations.
+This Python agent navigates uncertain terrain to locate cave entrances ('W') using probabilistic reasoning and adaptive pathfinding. <br>
+**Core components include:**
+- `astar`: for time-optimized search with terrain-aware movement costs.
+- `compute_posterior`: for Bayesian position probability updates.
+- `movement_cost`: modeling gear-dependent traversal penalties.
+- `simulate_path_success`: validating paths against probabilistic start positions. 
+
+The agent employs `find_best_plan` to evaluate paths using dual criteria: success probability (via posterior distributions) and time efficiency (through gear-adjusted terrain costs). Key innovations include misidentification handling (20% error rate for biome cells) and a Manhattan distance heuristic for cave proximity estimation. The main `agent_function` dynamically processes map observations, equipment status, and temporal constraints to generate action sequences. Through probabilistic simulations and priority-queue search, the system returns optimized plans with calculated success rates and expected completion times, adapting strategies to evolving environmental understanding.
 
 ### Key Features 
-- **Adaptive Map Exploration:** The find_mapElements function identifies key map features, like the Wumpus cave entrance and terrain types, facilitating efficient navigation while considering time and movement costs.
-
-- **Probabilistic Perception:** The agent incorporates probabilistic modeling to simulate the potential misidentification of cell types ('B' as 'C' and vice versa).  Thereby enhancing the agent's decision-making framework.
-
-- **Dynamic Movement Cost Calculation:** The code includes a function that assesses the cost of movement across different terrain types based on whether the agent has climbing gear.
-  
-- **Systematic Pathfinding:** Utilizing a breadth-first search algorithm, the solution systematically explores potential routes, ensuring comprehensive coverage of the environment in the quest for the optimal path to the target.
-  
-- **Path Viability Testing:** The framework includes simulation capabilities of executing a proposed path and validate whether it successfully reaches the cave entrance within the specified time constraints.
-
-- **Success Probability Assessment:** The code evaluates the success chance of reaching the cave entrance from different starting positions. This feature aids in determining the most promising starting points, maximizing the likelihood of success.
+- **Uncertainty Handling**: Accounts for misidentified cell observations (20% error rate for 'B'/'C' cells).
+- **Bayesian Posterior Updates:** Dynamic probability calculations for agent positioning.
+- **Pathfinding with A\* Algorithm:** Optimizes routes using heuristic-based search.
+- **Temporal Constraints:** Path validation against strict time limits.
+- **Equipment Considerations**: Adjusts movement costs based on climbing gear availability.
   
 ## Setup
 ### This repository contains:
- 1) **`example_agent.py`**: 
- 2) **`client.py`**:
+ 1) **`example_agent.py`**: Core implementation of navigation logic
+ 2) **`client.py`**: A Python implementation of the AISysProj server protocol
  3) **agent-configs**: Folder contains the JSON file for the environments
  
 ### How to run the code: 
 1) **`example_agent.py`**, **`client.py`** and **agent-configs** folder must all be on the same folder
 2) Run the **cmd** on the current path.
-3) Run the following command **python example_agent.py agent-configs/env-1.json** 
+3) Run the following command **python example_agent.py agent-configs/env-*.json** 
 
 ### Used libraries:
-**_collections:_**
-Python standard library provides specialized container data types, including `deque`, which offers efficient appending and popping of elements from both ends.
+**_heapq:_**
+mplements priority queues for efficient pathfinding in A* algorithm.
 **_random:_**
-Built-in library enables the generation of pseudo-random numbers and provides functions for performing random selections and shuffling of data.
+Simulates sensor uncertainty in cell type observations (20% error rate).
+**_logging:_**
+Tracks runtime events and debugging information during environment interactions.
 
 ## Code Structure
+1) **Library imports**
+```python
+from heapq import heappush, heappop
+import random
+```
+- **heapq:** Used for implementing priority queues in the A* search algorithm.
+- **random:** Simulates probabilistic sensor inaccuracies for cell type observations.
+
+2) **Movement & Perception Functions**
+```python
+def move_agent(position, action):
+    # ...
+```
+- Translates actions (e.g., "GO north") into position changes on the grid.
+- Returns new coordinates based on movement direction
+- Handles invalid actions by returning original position
+
+```python
+def perceived_cell_type(cell_type):
+    # ...
+```
+- Simulates sensor inaccuracies with a 20% error rate for 'B' and 'C' cells.
+- Perfect identification for other cell types
+  
+3) **Cost Calculation Function**
+```python
+def movement_cost(cell, climbing_gear=False):
+    # ...
+```
+- Calculates traversal costs for different cell types, adjusting for climbing gear usage.
+  
+    |    Terrain    |   With Gear   |  Without Gear |
+    | ------------- | ------------- | ------------- |
+    |     M/B/C     |    1.2h       |      1.0h     |
+    |       R       |    2.0h       |      4.0h     |
+    |    Default    |    1.2h       |      1.0h     |
+
+4) **Map Analysis Utilities:**
+```python
+def find_positions(map_lines, target):
+    # ...
+```
+- Locates all positions of a target cell type (e.g., 'W') in the map.
+- `find_positions(map, 'W')` finds all cave entrances
+
+```python
+def get_cell_type(map_lines, x, y):
+    # ...
+```
+- Safe cell type lookup with boundary handling
+- Treats out-of-bounds coordinates as meadows ('M')
+- Valid coordinates return actual map character
+
+5) **Probabilistic Reasoning Engine:**
+```python
+def compute_posterior(map_lines, observations):
+    # ...
+```
+- Calculates position probabilities using Bayesian inference
+- Handles two observation types: current-cell and cell-west
+- Incorporates 20% sensor error rate for 'B'/'C' cells
+- Uses uniform prior distribution across all cells
+
+**Workflow:**
+1) Initialize uniform prior (1/total_cells)
+2) Update likelihoods based on observations:
+3) Normalize probabilities to sum to 1
+
+6) **Pathfinding System:**
+```python
+def heuristic(position, map_lines):
+    # ...
+```
+-  Estimates minimal time to reach nearest cave entrance
+-  Manhattan distance to closest 'W' cell
+
+```python
+def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5):
+    # ...
+```
+- A* search implementation with time/action constraints
+  
+**Key Features:**
+- Priority queue using (time + heuristic) for ordering
+- Tracks visited (position, path) pairs to prevent loops
+- **Enforces:**
+   - Maximum 5 actions per path
+   - Total time ≤ max_time
+
+**Cost Calculation:**
+- First move: 0.5h fixed cost
+- Subsequent moves: Terrain-dependent costs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Output Format
 
