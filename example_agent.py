@@ -1,5 +1,8 @@
+# TODO
+#... 
+
+from collections import deque
 import random
-from heapq import heappush, heappop
 
 """Move the agent to a new position based on the action"""
 def move_agent(position, action):
@@ -37,8 +40,8 @@ def find_positions(map_lines, target):
     return [(row, col) for row, line in enumerate(map_lines) for col, cell in enumerate(line) if cell == target]
 
 
-"""Return cell type, treating out-of-bounds cells as meadows (M)"""
 def get_cell_type(map_lines, x, y):
+    """Return cell type, treating out-of-bounds cells as meadows (M)"""
     if 0 <= x < len(map_lines) and 0 <= y < len(map_lines[x]):
         return map_lines[x][y]
     return 'M'
@@ -95,47 +98,20 @@ def compute_posterior(map_lines, observations):
 
     return posterior
 
-"""Estimate the minimum time to reach the nearest W cell, considering cell types."""
 def heuristic(position, map_lines):
-    min_time = float('inf')
-    rows, cols = len(map_lines), len(map_lines[0])
-
-    # Iterate over all cells to find the nearest W
-    for x in range(rows):
-        for y in range(cols):
+    """Estimate the cost to reach the nearest W cell using Manhattan distance."""
+    min_distance = float('inf')
+    for x in range(len(map_lines)):
+        for y in range(len(map_lines[0])):
             if map_lines[x][y] == 'W':
-                # Calculate Manhattan distance
                 distance = abs(position[0] - x) + abs(position[1] - y)
+                if distance < min_distance:
+                    min_distance = distance
+    return min_distance
 
-                # Estimate traversal time based on cell types along the path
-                # Assume the path is a straight line (optimistic estimate)
-                time = 0.5  # Initial 0.5-hour cost to exit the starting cell
-                current_x, current_y = position[0], position[1]
+from heapq import heappush, heappop
 
-                # Simulate the path to the W cell
-                for _ in range(distance):
-                    # Move towards the goal (x, y)
-                    if current_x < x:
-                        current_x += 1
-                    elif current_x > x:
-                        current_x -= 1
-                    elif current_y < y:
-                        current_y += 1
-                    elif current_y > y:
-                        current_y -= 1
-
-                    # Get cell type and add traversal time
-                    cell = get_cell_type(map_lines, current_x, current_y)
-                    time += movement_cost(cell)
-
-                # Update minimum time
-                if time < min_time:
-                    min_time = time
-
-    return min_time
-
-
-def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=10):
+def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5):
     directions = ["GO north", "GO south", "GO east", "GO west"]
     heap = [(0.5 + heuristic(start, map_lines), 0.5, start, [])]  # (priority, time, position, path)
     visited = set([(start, tuple())])  # Track position and path to avoid loops
@@ -168,7 +144,7 @@ def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=10):
                 new_time = current_time  # First action cost already included
             else:
                 cell = get_cell_type(map_lines, new_position[0], new_position[1])
-                cost = movement_cost(cell)
+                cost = movement_cost(cell, climbing_gear)
                 new_time = current_time + cost
 
             # Calculate priority (f = g + h)
@@ -180,6 +156,26 @@ def astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=10):
                 heappush(heap, (priority, new_time, new_position, new_path))
 
     return None
+
+
+"""Calculate the total time required for a given path based on cell types"""
+def calculate_total_time(path, start, map_lines, climbing_gear):
+    total_time = 0.5  # Initial move cost
+    current_position = start
+    first_move = True
+
+    for action in path:
+        new_position = move_agent(current_position, action)
+        if not first_move:
+            # Use get_cell_type to handle out-of-bounds
+            cell = get_cell_type(map_lines, new_position[0], new_position[1])
+            total_time += movement_cost(cell, climbing_gear)
+        else:
+            first_move = False  # Skip additional cost for the first move
+
+        current_position = new_position
+
+    return total_time
 
 
 """Simulate the movement along the path and check if it leads to a cave entrance."""
@@ -211,6 +207,30 @@ def simulate_path_success(start, path, map_lines, max_time, climbing_gear):
 
     return False, 0.0  # Return failure if no W found
 
+"""Calculate the success chance based on starting positions."""
+def calculate_success_chance_for_starts(start_positions, map_lines, path, max_time, climbing_gear):
+    success_count = 0
+    total_starts = len(start_positions)
+
+    for agent in start_positions:
+        if simulate_path_success(agent, path, map_lines, max_time, climbing_gear):
+            success_count += 1
+
+    # Calculate success chance
+    if total_starts > 0:
+        return success_count / total_starts  # Fraction of successful starts
+    else:
+        return 0.0  # No starts to evaluate
+    
+
+"""Return the start cell type after applying a 20% misidentification chance."""
+def apply_start_cell_misidentification(cell_type):
+    if cell_type == 'B' and random.random() < 0.2:
+        return 'C'  # 20% chance to misidentify 'B' as 'C'
+    elif cell_type == 'C' and random.random() < 0.2:
+        return 'B'  # 20% chance to misidentify 'C' as 'B'
+    return cell_type  # No misidentification
+
 
 def find_best_plan(map_lines, posterior, climbing_gear, max_time):
     best_plan = None
@@ -219,7 +239,7 @@ def find_best_plan(map_lines, posterior, climbing_gear, max_time):
     best_expected_time = 0
 
     for start in [pos for pos, prob in posterior.items() if prob > 0]:
-        path = astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5)
+        path = astar(start, map_lines, max_time, climbing_gear, posterior, max_actions=5)  # Use A* search
         if not path:
             continue
 
